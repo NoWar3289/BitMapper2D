@@ -308,12 +308,15 @@ class TileMapEditor:
         button_height = 25
         button_color = (80, 80, 80)
         button_hover_color = (100, 100, 100)
+        button_disabled_color = (60, 60, 60)
         
         buttons = [
-            {"text": "Clear Map", "action": self.clear_map},
-            {"text": "Save Map", "action": self.save_map},
-            {"text": "Load Map", "action": self.load_map},
-            {"text": "Toggle Grid", "action": self.toggle_grid}
+            {"text": "Undo", "action": self.undo, "enabled": lambda: len(self.history) > 1},
+            {"text": "Redo", "action": self.redo, "enabled": lambda: len(self.redo_stack) > 0},
+            {"text": "Clear Map", "action": self.clear_map, "enabled": lambda: True},
+            {"text": "Save Map", "action": self.save_map, "enabled": lambda: True},
+            {"text": "Load Map", "action": self.load_map, "enabled": lambda: True},
+            {"text": "Toggle Grid", "action": self.toggle_grid, "enabled": lambda: True}
         ]
         
         for i, button in enumerate(buttons):
@@ -323,8 +326,9 @@ class TileMapEditor:
             # Check if mouse is over button
             mouse_pos = pygame.mouse.get_pos()
             mouse_clicked = pygame.mouse.get_pressed()[0]
+            button_enabled = button["enabled"]()
             
-            if button_rect.collidepoint(mouse_pos):
+            if button_rect.collidepoint(mouse_pos) and button_enabled:
                 pygame.draw.rect(self.screen, button_hover_color, button_rect)
                 if mouse_clicked and hasattr(self, 'last_button_click_time') and \
                 pygame.time.get_ticks() - self.last_button_click_time > 200:
@@ -333,13 +337,13 @@ class TileMapEditor:
                 elif not hasattr(self, 'last_button_click_time'):
                     self.last_button_click_time = pygame.time.get_ticks()
             else:
-                pygame.draw.rect(self.screen, button_color, button_rect)
+                pygame.draw.rect(self.screen, button_color if button_enabled else button_disabled_color, button_rect)
             
             # Draw button border
-            pygame.draw.rect(self.screen, (150, 150, 150), button_rect, 1)
+            pygame.draw.rect(self.screen, (150, 150, 150) if button_enabled else (100, 100, 100), button_rect, 1)
             
             # Draw button text
-            button_text = self.font.render(button["text"], True, self.TEXT_COLOR)
+            button_text = self.font.render(button["text"], True, self.TEXT_COLOR if button_enabled else (150, 150, 150))
             text_x = button_rect.centerx - button_text.get_width() // 2
             text_y = button_rect.centery - button_text.get_height() // 2
             self.screen.blit(button_text, (text_x, text_y))
@@ -383,8 +387,6 @@ class TileMapEditor:
             "+ / -: Zoom in/out",
             "G: Toggle grid",
             "Tab: Change map size",
-            "S: Save map",
-            "L: Load map",
             "Del: Clear map",
             "C: Center map",
             "Ctrl+Z: Undo",
@@ -422,10 +424,6 @@ class TileMapEditor:
                     self.is_running = False
                 elif event.key == K_TAB:
                     self.toggle_map_size()
-                elif event.key == K_s and not pygame.key.get_mods() & KMOD_CTRL:
-                    self.save_map()
-                elif event.key == K_l:
-                    self.load_map()
                 elif event.key == K_g:
                     self.show_grid = not self.show_grid
                 # Map navigation with arrow keys
@@ -556,6 +554,9 @@ class TileMapEditor:
         brush_size = self.brush_sizes[self.current_brush_size]
         offset = brush_size // 2
         
+        # Save state before making changes
+        self.save_state()
+        
         # Place tiles
         for y_offset in range(brush_size):
             for x_offset in range(brush_size):
@@ -572,6 +573,9 @@ class TileMapEditor:
         
         brush_size = self.brush_sizes[self.current_brush_size]
         offset = brush_size // 2
+        
+        # Save state before making changes
+        self.save_state()
         
         for y_offset in range(brush_size):
             for x_offset in range(brush_size):
@@ -615,6 +619,9 @@ class TileMapEditor:
         # Don't do anything if target is already the replacement
         if target_tile == replacement_tile:
             return
+        
+        # Save state before making changes
+        self.save_state()
         
         # Stack-based flood fill to avoid recursion limits
         stack = [(start_x, start_y)]
@@ -730,7 +737,7 @@ class TileMapEditor:
                         tile_index = self.tile_map[y][x]
                         if tile_index == -1:
                             # No tile (use -1 to represent empty)
-                            row_ids.append("-1")
+                            row_ids.append("10")
                         else:
                             # Convert the internal index to the actual tile ID
                             tile_id = self.texture_ids[tile_index]
