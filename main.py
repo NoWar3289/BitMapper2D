@@ -59,6 +59,20 @@ class TileMapEditor:
         
         self.is_running = True
         self.clock = pygame.time.Clock()
+
+        # Brush sizes
+        self.brush_sizes = [1, 2, 3]  # 1x1, 2x2, 3x3 brush sizes
+        self.current_brush_size = 0  # Index in brush_sizes array
+
+        # Middle click dragging
+        self.dragging = False
+        self.drag_start_x = 0
+        self.drag_start_y = 0
+        self.drag_start_camera_x = 0
+        self.drag_start_camera_y = 0
+
+        # Show expanded shortcuts
+        self.show_expanded_shortcuts = False
     
     def update_screen_size(self):
         # Calculate the maximum offset to prevent scrolling beyond map boundaries
@@ -230,9 +244,10 @@ class TileMapEditor:
         info_text = [
             f"Map Size: {self.map_width}x{self.map_height}",
             f"Zoom: {int(self.zoom_level * 100)}%",
-            f"Selected Tile: {self.texture_ids[self.selected_tile_index] if self.selected_tile_index < len(self.texture_ids) else -1}"
+            f"Selected Tile: {self.texture_ids[self.selected_tile_index] if self.selected_tile_index < len(self.texture_ids) else -1}",
+            f"Brush Size: {self.brush_sizes[self.current_brush_size]}x{self.brush_sizes[self.current_brush_size]}"
         ]
-        
+
         for i, line in enumerate(info_text):
             text = self.font.render(line, True, self.TEXT_COLOR)
             self.screen.blit(text, (self.screen_width - self.SIDEBAR_WIDTH + 10, y_offset + i * 20))
@@ -240,10 +255,33 @@ class TileMapEditor:
         y_offset += len(info_text) * 20 + 20
         
         # All shortcuts
+        # Replace the shortcuts section with:
+        y_offset += len(info_text) * 20 + 20
+
+        # Draw shortcuts header with toggle ability
+        shortcuts_header = self.font.render("Shortcuts (click to expand)", True, self.TEXT_COLOR)
+        shortcuts_rect = pygame.Rect(self.screen_width - self.SIDEBAR_WIDTH + 10, y_offset, 
+                                    self.SIDEBAR_WIDTH - 20, 20)
+        self.screen.blit(shortcuts_header, (self.screen_width - self.SIDEBAR_WIDTH + 10, y_offset))
+
+        # Check if user clicked on header
+        mouse_pos = pygame.mouse.get_pos()
+        mouse_clicked = pygame.mouse.get_pressed()[0]
+        if shortcuts_rect.collidepoint(mouse_pos) and mouse_clicked and not hasattr(self, 'last_click_time'):
+            self.show_expanded_shortcuts = not self.show_expanded_shortcuts
+            self.last_click_time = pygame.time.get_ticks()
+        elif hasattr(self, 'last_click_time') and pygame.time.get_ticks() - self.last_click_time > 200:
+            delattr(self, 'last_click_time')
+
+        y_offset += 25
+
+        # All shortcuts
         shortcut_text = [
-            "Shortcuts:",
-            "LMB: Place tile",
+            "LMB: Place tile", 
             "RMB: Erase tile",
+            "MMB: Drag map",
+            "Shift+LMB/F: Fill area",
+            "1/2/3: Set brush size",
             "Scroll/WASD: Navigate",
             "Ctrl+Scroll: Zoom in/out",
             "+ / -: Zoom in/out",
@@ -254,15 +292,23 @@ class TileMapEditor:
             "C: Clear map",
             "Esc: Quit"
         ]
-        
-        for i, line in enumerate(shortcut_text):
-            text = self.small_font.render(line, True, self.TEXT_COLOR)
-            self.screen.blit(text, (self.screen_width - self.SIDEBAR_WIDTH + 10, y_offset + i * 16))
-        
-        # Show saved message if timer active
-        if self.saved_message_timer > 0:
-            save_text = self.font.render("Map saved!", True, (0, 255, 0))
-            self.screen.blit(save_text, (self.screen_width - self.SIDEBAR_WIDTH + 10, y_offset - 25))
+
+        if self.show_expanded_shortcuts:
+            # Show expanded shortcuts list
+            for i, line in enumerate(shortcut_text):
+                text = self.small_font.render(line, True, self.TEXT_COLOR)
+                self.screen.blit(text, (self.screen_width - self.SIDEBAR_WIDTH + 20, y_offset + i * 16))
+        else:
+            # Show collapsed view with just a few essential shortcuts
+            essential_shortcuts = shortcut_text[:5]  # Show just the first few shortcuts
+            for i, line in enumerate(essential_shortcuts):
+                text = self.small_font.render(line, True, self.TEXT_COLOR)
+                self.screen.blit(text, (self.screen_width - self.SIDEBAR_WIDTH + 20, y_offset + i * 16))
+            
+            # Add "..." to indicate there are more
+            more_text = self.small_font.render("...", True, self.TEXT_COLOR)
+            self.screen.blit(more_text, (self.screen_width - self.SIDEBAR_WIDTH + 20, 
+                                        y_offset + len(essential_shortcuts) * 16))
     
     def handle_input(self):
         for event in pygame.event.get():
@@ -299,19 +345,49 @@ class TileMapEditor:
                     self.adjust_zoom(1.25)  # Zoom in
                 elif event.key == K_MINUS:
                     self.adjust_zoom(0.8)   # Zoom out
+                # Brush size controls
+                elif event.key == K_1:
+                    self.current_brush_size = 0  # 1x1 brush
+                    print(f"Brush size: 1x1")
+                elif event.key == K_2:
+                    self.current_brush_size = 1  # 2x2 brush
+                    print(f"Brush size: 2x2")
+                elif event.key == K_3:
+                    self.current_brush_size = 2  # 3x3 brush
+                    print(f"Brush size: 3x3")
+                elif event.key == K_f:
+                    # Get mouse position and fill from there
+                    mouse_pos = pygame.mouse.get_pos()
+                    if mouse_pos[0] <= self.screen_width - self.SIDEBAR_WIDTH:
+                        map_x = (mouse_pos[0] + self.camera_x) // self.tile_size
+                        map_y = (mouse_pos[1] + self.camera_y) // self.tile_size
+                        self.fill_area(map_x, map_y)
             
             elif event.type == MOUSEBUTTONDOWN:
                 if event.button == 1:  # Left click
-                    # Check if click is in sidebar
-                    if event.pos[0] > self.screen_width - self.SIDEBAR_WIDTH:
-                        self.handle_sidebar_click(event.pos)
+                    # Shift+Left click for fill
+                    if pygame.key.get_mods() & KMOD_SHIFT:
+                        if event.pos[0] <= self.screen_width - self.SIDEBAR_WIDTH:
+                            map_x = (event.pos[0] + self.camera_x) // self.tile_size
+                            map_y = (event.pos[1] + self.camera_y) // self.tile_size
+                            self.fill_area(map_x, map_y)
+                    # Regular left click
                     else:
-                        self.drawing = True
-                        self.place_tile(event.pos)
+                        # Check if click is in sidebar
+                        if event.pos[0] > self.screen_width - self.SIDEBAR_WIDTH:
+                            self.handle_sidebar_click(event.pos)
+                        else:
+                            self.drawing = True
+                            self.place_tile(event.pos)
                 elif event.button == 3:  # Right click
                     if event.pos[0] <= self.screen_width - self.SIDEBAR_WIDTH:
                         self.erasing = True
                         self.erase_tile(event.pos)
+                elif event.button == 2:  # Middle click for dragging
+                    self.dragging = True
+                    self.drag_start_x, self.drag_start_y = event.pos
+                    self.drag_start_camera_x = self.camera_x
+                    self.drag_start_camera_y = self.camera_y
                 # Mouse wheel zoom with Ctrl key
                 elif event.button == 4:  # Scroll up
                     if pygame.key.get_mods() & KMOD_CTRL:
@@ -329,12 +405,19 @@ class TileMapEditor:
                     self.drawing = False
                 elif event.button == 3:  # Right click release
                     self.erasing = False
+                elif event.button == 2:  # Middle click release
+                    self.dragging = False
             
             elif event.type == MOUSEMOTION:
                 if self.drawing and event.pos[0] <= self.screen_width - self.SIDEBAR_WIDTH:
                     self.place_tile(event.pos)
                 elif self.erasing and event.pos[0] <= self.screen_width - self.SIDEBAR_WIDTH:
                     self.erase_tile(event.pos)
+                elif self.dragging:
+                    dx = self.drag_start_x - event.pos[0]
+                    dy = self.drag_start_y - event.pos[1]
+                    self.camera_x = min(max(0, self.drag_start_camera_x + dx), self.max_camera_x)
+                    self.camera_y = min(max(0, self.drag_start_camera_y + dy), self.max_camera_y)
     
     def handle_sidebar_click(self, pos):
         """Handle clicks in the sidebar to select textures"""
@@ -360,20 +443,36 @@ class TileMapEditor:
             print(f"Selected tile index: {self.selected_tile_index} (ID: {self.texture_ids[tile_index]})")
     
     def place_tile(self, pos):
-        """Place the currently selected tile at the mouse position"""
-        map_x = (pos[0] + self.camera_x) // self.tile_size
-        map_y = (pos[1] + self.camera_y) // self.tile_size
+        """Place the currently selected tile at the mouse position with current brush size"""
+        center_x = (pos[0] + self.camera_x) // self.tile_size
+        center_y = (pos[1] + self.camera_y) // self.tile_size
         
-        if 0 <= map_x < self.map_width and 0 <= map_y < self.map_height:
-            self.tile_map[map_y][map_x] = self.selected_tile_index
-    
+        brush_size = self.brush_sizes[self.current_brush_size]
+        offset = brush_size // 2
+        
+        for y_offset in range(brush_size):
+            for x_offset in range(brush_size):
+                map_x = center_x - offset + x_offset
+                map_y = center_y - offset + y_offset
+                
+                if 0 <= map_x < self.map_width and 0 <= map_y < self.map_height:
+                    self.tile_map[map_y][map_x] = self.selected_tile_index
+
     def erase_tile(self, pos):
-        """Erase the tile at the mouse position"""
-        map_x = (pos[0] + self.camera_x) // self.tile_size
-        map_y = (pos[1] + self.camera_y) // self.tile_size
+        """Erase tiles at the mouse position with current brush size"""
+        center_x = (pos[0] + self.camera_x) // self.tile_size
+        center_y = (pos[1] + self.camera_y) // self.tile_size
         
-        if 0 <= map_x < self.map_width and 0 <= map_y < self.map_height:
-            self.tile_map[map_y][map_x] = -1  # -1 represents no tile
+        brush_size = self.brush_sizes[self.current_brush_size]
+        offset = brush_size // 2
+        
+        for y_offset in range(brush_size):
+            for x_offset in range(brush_size):
+                map_x = center_x - offset + x_offset
+                map_y = center_y - offset + y_offset
+                
+                if 0 <= map_x < self.map_width and 0 <= map_y < self.map_height:
+                    self.tile_map[map_y][map_x] = -1  # -1 represents no tile
     
     def toggle_map_size(self):
         """Toggle between available map sizes"""
@@ -397,6 +496,38 @@ class TileMapEditor:
         self.camera_y = min(self.camera_y, self.max_camera_y)
         
         print(f"Map size changed to {self.map_width}x{self.map_height}")
+
+    def fill_area(self, start_x, start_y):
+        """Fill connected area of same tile type with selected tile (flood fill)"""
+        if not (0 <= start_x < self.map_width and 0 <= start_y < self.map_height):
+            return
+            
+        target_tile = self.tile_map[start_y][start_x]
+        replacement_tile = self.selected_tile_index
+        
+        # Don't do anything if target is already the replacement
+        if target_tile == replacement_tile:
+            return
+        
+        # Stack-based flood fill to avoid recursion limits
+        stack = [(start_x, start_y)]
+        visited = set()
+        
+        while stack:
+            x, y = stack.pop()
+            
+            if (x, y) in visited or not (0 <= x < self.map_width and 0 <= y < self.map_height):
+                continue
+                
+            if self.tile_map[y][x] == target_tile:
+                self.tile_map[y][x] = replacement_tile
+                visited.add((x, y))
+                
+                # Add neighbors to stack
+                stack.append((x + 1, y))
+                stack.append((x - 1, y))
+                stack.append((x, y + 1))
+                stack.append((x, y - 1))
     
     def save_map(self):
         """Save the current map to a file"""
