@@ -9,7 +9,7 @@ class TileMapEditor:
         
         # Constants
         self.DEFAULT_TILE_SIZE = 32
-        self.SIDEBAR_WIDTH = 240  # Increased for more space for shortcuts
+        self.SIDEBAR_WIDTH = 240
         self.MAP_SIZES = [(50, 50), (100, 100)]
         self.current_map_size_index = 0
         self.GRID_COLOR = (100, 100, 100)
@@ -17,9 +17,20 @@ class TileMapEditor:
         self.SIDEBAR_COLOR = (70, 70, 70)
         self.TEXT_COLOR = (255, 255, 255)
         
+        # History for undo/redo
+        self.history = []
+        self.redo_stack = []
+        self.max_history = 100  # Maximum number of states to keep in history
+        
+        # Texture scrolling initialization
+        self.texture_scroll_offset = 0
+        self.last_scroll_time = 0
+        
         # Zoom level (1.0 = 100%)
         self.zoom_level = 1.0
         self.tile_size = self.DEFAULT_TILE_SIZE
+        self.MIN_ZOOM = 0.25
+        self.MAX_ZOOM = 4.0
         
         # Initialize dimensions
         self.map_width, self.map_height = self.MAP_SIZES[self.current_map_size_index]
@@ -28,13 +39,13 @@ class TileMapEditor:
         self.screen_width = 800
         self.screen_height = 600
         self.screen = pygame.display.set_mode((self.screen_width, self.screen_height), pygame.RESIZABLE)
-        pygame.display.set_caption("2D Tile Map Editor")
+        pygame.display.set_caption("BitMapper2D")
         
-        # Camera offset for map navigation - MOVED EARLIER
+        # Camera offset for map navigation
         self.camera_x = 0
         self.camera_y = 0
         
-        # Update screen size based on window size - NOW AFTER camera_x and camera_y are initialized
+        # Update screen size based on window size
         self.update_screen_size()
         
         # Tile map and currently selected tile
@@ -43,8 +54,8 @@ class TileMapEditor:
         
         # Load textures
         self.textures = []
-        self.texture_ids = []  # Store the actual IDs from filenames (000.png -> 0)
-        self.zoom_textures = {}  # Cache for zoomed textures
+        self.texture_ids = []
+        self.zoom_textures = {}
         self.load_textures()
         
         # Font for UI
@@ -61,8 +72,8 @@ class TileMapEditor:
         self.clock = pygame.time.Clock()
 
         # Brush sizes
-        self.brush_sizes = [1, 2, 3]  # 1x1, 2x2, 3x3 brush sizes
-        self.current_brush_size = 0  # Index in brush_sizes array
+        self.brush_sizes = [1, 2, 3]
+        self.current_brush_size = 0
 
         # Middle click dragging
         self.dragging = False
@@ -73,7 +84,7 @@ class TileMapEditor:
 
         # Show expanded shortcuts
         self.show_expanded_shortcuts = False
-    
+
     def update_screen_size(self):
         # Calculate the maximum offset to prevent scrolling beyond map boundaries
         self.max_camera_x = max(0, (self.map_width * self.tile_size) - (self.screen_width - self.SIDEBAR_WIDTH))
@@ -89,34 +100,6 @@ class TileMapEditor:
         self.screen_height = max(400, new_height)
         self.screen = pygame.display.set_mode((self.screen_width, self.screen_height), pygame.RESIZABLE)
         self.update_screen_size()
-    
-    def adjust_zoom(self, zoom_factor):
-        """Change the zoom level by a factor"""
-        old_zoom = self.zoom_level
-        
-        # Calculate mouse position in map coordinates before zoom
-        mouse_x, mouse_y = pygame.mouse.get_pos()
-        if mouse_x < self.screen_width - self.SIDEBAR_WIDTH:  # Only zoom if mouse is in the map area
-            map_x = (mouse_x + self.camera_x) / self.tile_size
-            map_y = (mouse_y + self.camera_y) / self.tile_size
-            
-            # Apply new zoom level
-            self.zoom_level *= zoom_factor
-            self.zoom_level = max(0.25, min(4.0, self.zoom_level))  # Limit zoom between 25% and 400%
-            
-            # Update tile size based on zoom level
-            self.tile_size = int(self.DEFAULT_TILE_SIZE * self.zoom_level)
-            
-            # Adjust camera to keep the point under mouse at the same place
-            self.camera_x = int(map_x * self.tile_size - mouse_x)
-            self.camera_y = int(map_y * self.tile_size - mouse_y)
-            
-            # Clear zoomed texture cache if zoom changed
-            if old_zoom != self.zoom_level:
-                self.zoom_textures = {}
-            
-            # Update screen size constraints
-            self.update_screen_size()
     
     def load_textures(self):
         """Load texture images from a folder, expecting filenames like 000.png, 001.png, etc."""
@@ -206,40 +189,106 @@ class TileMapEditor:
         pygame.draw.rect(self.screen, self.SIDEBAR_COLOR, 
                         (self.screen_width - self.SIDEBAR_WIDTH, 0, self.SIDEBAR_WIDTH, self.screen_height))
         
-        # Draw available textures in a grid
-        textures_per_row = max(1, (self.SIDEBAR_WIDTH - 20) // (self.DEFAULT_TILE_SIZE + 8))  # Reduced tiles per row
-        sidebar_tile_size = min(self.DEFAULT_TILE_SIZE, (self.SIDEBAR_WIDTH - 20) // textures_per_row - 8)
+        # Draw title with padding and background
+        title_height = 40
+        title_bg = pygame.Rect(self.screen_width - self.SIDEBAR_WIDTH, 0, self.SIDEBAR_WIDTH, title_height)
+        pygame.draw.rect(self.screen, (60, 60, 60), title_bg)
+        pygame.draw.line(self.screen, (100, 100, 100), 
+                        (self.screen_width - self.SIDEBAR_WIDTH, title_height),
+                        (self.screen_width, title_height))
         
+        title_text = self.font.render("BitMapper2D", True, self.TEXT_COLOR)
+        title_x = self.screen_width - self.SIDEBAR_WIDTH + (self.SIDEBAR_WIDTH - title_text.get_width()) // 2
+        self.screen.blit(title_text, (title_x, (title_height - title_text.get_height()) // 2))
+        
+        # Show saved message if timer active
+        if self.saved_message_timer > 0:
+            save_text = self.font.render("Map saved!", True, (0, 255, 0))
+            save_x = self.screen_width - self.SIDEBAR_WIDTH + (self.SIDEBAR_WIDTH - save_text.get_width()) // 2
+            self.screen.blit(save_text, (save_x, title_height + 5))
+        
+        # Calculate available space for textures
+        textures_per_row = max(1, (self.SIDEBAR_WIDTH - 30) // (self.DEFAULT_TILE_SIZE + 8))
+        sidebar_tile_size = min(self.DEFAULT_TILE_SIZE, (self.SIDEBAR_WIDTH - 30) // textures_per_row - 8)
+        
+        # Texture section boundaries
+        texture_area_top = title_height + 30
+        texture_area_height = 280
+        texture_area_bottom = texture_area_top + texture_area_height
+        
+        # Calculate scrollbar parameters
+        scrollbar_width = 12
+        scrollbar_x = self.screen_width - scrollbar_width - 5
+        scrollbar_y = texture_area_top
+        scrollbar_height = texture_area_height
+        
+        # Calculate total rows and visible rows
+        total_rows = (len(self.textures) + textures_per_row - 1) // textures_per_row
+        visible_rows = texture_area_height // (sidebar_tile_size + 24)
+        max_scroll = max(0, total_rows - visible_rows)
+        
+        if max_scroll > 0:
+            # Draw scrollbar background
+            pygame.draw.rect(self.screen, (50, 50, 50), 
+                           (scrollbar_x, scrollbar_y, scrollbar_width, scrollbar_height))
+            
+            # Calculate scrollbar handle
+            handle_height = max(20, scrollbar_height * (visible_rows / total_rows))
+            handle_pos = scrollbar_y + (scrollbar_height - handle_height) * (self.texture_scroll_offset / max_scroll)
+            
+            # Draw scrollbar handle
+            pygame.draw.rect(self.screen, (120, 120, 120), 
+                           (scrollbar_x, handle_pos, scrollbar_width, handle_height))
+            
+            # Handle scrollbar interaction
+            mouse_pos = pygame.mouse.get_pos()
+            mouse_pressed = pygame.mouse.get_pressed()[0]
+            
+            if mouse_pressed and scrollbar_x <= mouse_pos[0] <= scrollbar_x + scrollbar_width and \
+               scrollbar_y <= mouse_pos[1] <= scrollbar_y + scrollbar_height:
+                # Calculate new scroll position based on mouse position
+                relative_y = (mouse_pos[1] - scrollbar_y) / scrollbar_height
+                self.texture_scroll_offset = min(max_scroll, max(0, int(relative_y * total_rows)))
+        
+        # Draw texture area border
+        pygame.draw.rect(self.screen, (100, 100, 100), 
+                        (self.screen_width - self.SIDEBAR_WIDTH + 5, texture_area_top - 5, 
+                         self.SIDEBAR_WIDTH - 10, texture_area_height + 10), 1)
+        
+        # Draw visible textures
         for i, texture in enumerate(self.textures):
-            row = i // textures_per_row
+            row = i // textures_per_row - self.texture_scroll_offset
             col = i % textures_per_row
             
-            # Increased spacing between tiles (8 -> 12)
+            if row < 0:
+                continue
+            
+            # Calculate position (adjusted for scrollbar)
             x = self.screen_width - self.SIDEBAR_WIDTH + col * (sidebar_tile_size + 12) + 10
-            y = row * (sidebar_tile_size + 24) + 40  # Increased vertical spacing (18 -> 24)
+            y = texture_area_top + row * (sidebar_tile_size + 24)
+            
+            # Skip if outside texture area
+            if y < texture_area_top or y + sidebar_tile_size > texture_area_bottom:
+                continue
             
             # Draw selection box around the selected texture
             if i == self.selected_tile_index:
                 pygame.draw.rect(self.screen, (255, 255, 0), 
-                                (x - 2, y - 2, sidebar_tile_size + 4, sidebar_tile_size + 4), 2)
+                               (x - 2, y - 2, sidebar_tile_size + 4, sidebar_tile_size + 4), 2)
             
-            # Draw a scaled version of the texture for the sidebar
+            # Draw texture
             sidebar_texture = pygame.transform.scale(texture, (sidebar_tile_size, sidebar_tile_size))
             self.screen.blit(sidebar_texture, (x, y))
             
-            # Draw tile ID - with wider area for text
+            # Draw tile ID
             if i < len(self.texture_ids):
                 id_text = self.small_font.render(str(self.texture_ids[i]), True, (255, 255, 0))
                 text_x = x + (sidebar_tile_size - id_text.get_width()) // 2
-                text_y = y + sidebar_tile_size + 5  # Increased spacing (2 -> 5)
+                text_y = y + sidebar_tile_size + 5
                 self.screen.blit(id_text, (text_x, text_y))
         
-        # Draw UI text
-        title_text = self.font.render("Tile Map Editor", True, self.TEXT_COLOR)
-        self.screen.blit(title_text, (self.screen_width - self.SIDEBAR_WIDTH + 10, 10))
-        
-        # Information about current state - adjust y_offset calculation
-        y_offset = 40 + ((len(self.textures) + textures_per_row - 1) // textures_per_row) * (sidebar_tile_size + 24) + 20
+        # Information about current state
+        y_offset = texture_area_bottom + 20
         
         info_text = [
             f"Map Size: {self.map_width}x{self.map_height}",
@@ -247,34 +296,81 @@ class TileMapEditor:
             f"Selected Tile: {self.texture_ids[self.selected_tile_index] if self.selected_tile_index < len(self.texture_ids) else -1}",
             f"Brush Size: {self.brush_sizes[self.current_brush_size]}x{self.brush_sizes[self.current_brush_size]}"
         ]
-
+        
         for i, line in enumerate(info_text):
             text = self.font.render(line, True, self.TEXT_COLOR)
             self.screen.blit(text, (self.screen_width - self.SIDEBAR_WIDTH + 10, y_offset + i * 20))
         
         y_offset += len(info_text) * 20 + 20
         
-        # All shortcuts
-        # Replace the shortcuts section with:
-        y_offset += len(info_text) * 20 + 20
-
-        # Draw shortcuts header with toggle ability
+        # Add UI buttons
+        button_width = self.SIDEBAR_WIDTH - 20
+        button_height = 25
+        button_color = (80, 80, 80)
+        button_hover_color = (100, 100, 100)
+        
+        buttons = [
+            {"text": "Clear Map", "action": self.clear_map},
+            {"text": "Save Map", "action": self.save_map},
+            {"text": "Load Map", "action": self.load_map},
+            {"text": "Toggle Grid", "action": self.toggle_grid}
+        ]
+        
+        for i, button in enumerate(buttons):
+            button_rect = pygame.Rect(self.screen_width - self.SIDEBAR_WIDTH + 10, 
+                                    y_offset + i * (button_height + 5), button_width, button_height)
+            
+            # Check if mouse is over button
+            mouse_pos = pygame.mouse.get_pos()
+            mouse_clicked = pygame.mouse.get_pressed()[0]
+            
+            if button_rect.collidepoint(mouse_pos):
+                pygame.draw.rect(self.screen, button_hover_color, button_rect)
+                if mouse_clicked and hasattr(self, 'last_button_click_time') and \
+                pygame.time.get_ticks() - self.last_button_click_time > 200:
+                    button["action"]()
+                    self.last_button_click_time = pygame.time.get_ticks()
+                elif not hasattr(self, 'last_button_click_time'):
+                    self.last_button_click_time = pygame.time.get_ticks()
+            else:
+                pygame.draw.rect(self.screen, button_color, button_rect)
+            
+            # Draw button border
+            pygame.draw.rect(self.screen, (150, 150, 150), button_rect, 1)
+            
+            # Draw button text
+            button_text = self.font.render(button["text"], True, self.TEXT_COLOR)
+            text_x = button_rect.centerx - button_text.get_width() // 2
+            text_y = button_rect.centery - button_text.get_height() // 2
+            self.screen.blit(button_text, (text_x, text_y))
+        
+        if hasattr(self, 'last_button_click_time') and pygame.time.get_ticks() - self.last_button_click_time > 200:
+            delattr(self, 'last_button_click_time')
+        
+        y_offset += len(buttons) * (button_height + 5) + 20
+        
+        # Draw shortcuts section
         shortcuts_header = self.font.render("Shortcuts (click to expand)", True, self.TEXT_COLOR)
         shortcuts_rect = pygame.Rect(self.screen_width - self.SIDEBAR_WIDTH + 10, y_offset, 
-                                    self.SIDEBAR_WIDTH - 20, 20)
+                                   self.SIDEBAR_WIDTH - 20, 20)
         self.screen.blit(shortcuts_header, (self.screen_width - self.SIDEBAR_WIDTH + 10, y_offset))
-
+        
         # Check if user clicked on header
         mouse_pos = pygame.mouse.get_pos()
         mouse_clicked = pygame.mouse.get_pressed()[0]
-        if shortcuts_rect.collidepoint(mouse_pos) and mouse_clicked and not hasattr(self, 'last_click_time'):
+        
+        if shortcuts_rect.collidepoint(mouse_pos) and mouse_clicked and hasattr(self, 'last_shortcut_click_time') and \
+        pygame.time.get_ticks() - self.last_shortcut_click_time > 200:
             self.show_expanded_shortcuts = not self.show_expanded_shortcuts
-            self.last_click_time = pygame.time.get_ticks()
-        elif hasattr(self, 'last_click_time') and pygame.time.get_ticks() - self.last_click_time > 200:
-            delattr(self, 'last_click_time')
-
+            self.last_shortcut_click_time = pygame.time.get_ticks()
+        elif not hasattr(self, 'last_shortcut_click_time'):
+            self.last_shortcut_click_time = pygame.time.get_ticks()
+        
+        if hasattr(self, 'last_shortcut_click_time') and pygame.time.get_ticks() - self.last_shortcut_click_time > 200:
+            delattr(self, 'last_shortcut_click_time')
+        
         y_offset += 25
-
+        
         # All shortcuts
         shortcut_text = [
             "LMB: Place tile", 
@@ -289,10 +385,13 @@ class TileMapEditor:
             "Tab: Change map size",
             "S: Save map",
             "L: Load map",
-            "C: Clear map",
+            "Del: Clear map",
+            "C: Center map",
+            "Ctrl+Z: Undo",
+            "Ctrl+Y: Redo",
             "Esc: Quit"
         ]
-
+        
         if self.show_expanded_shortcuts:
             # Show expanded shortcuts list
             for i, line in enumerate(shortcut_text):
@@ -300,7 +399,7 @@ class TileMapEditor:
                 self.screen.blit(text, (self.screen_width - self.SIDEBAR_WIDTH + 20, y_offset + i * 16))
         else:
             # Show collapsed view with just a few essential shortcuts
-            essential_shortcuts = shortcut_text[:5]  # Show just the first few shortcuts
+            essential_shortcuts = shortcut_text[:5]
             for i, line in enumerate(essential_shortcuts):
                 text = self.small_font.render(line, True, self.TEXT_COLOR)
                 self.screen.blit(text, (self.screen_width - self.SIDEBAR_WIDTH + 20, y_offset + i * 16))
@@ -308,8 +407,8 @@ class TileMapEditor:
             # Add "..." to indicate there are more
             more_text = self.small_font.render("...", True, self.TEXT_COLOR)
             self.screen.blit(more_text, (self.screen_width - self.SIDEBAR_WIDTH + 20, 
-                                        y_offset + len(essential_shortcuts) * 16))
-    
+                                       y_offset + len(essential_shortcuts) * 16))
+
     def handle_input(self):
         for event in pygame.event.get():
             if event.type == QUIT:
@@ -327,36 +426,22 @@ class TileMapEditor:
                     self.save_map()
                 elif event.key == K_l:
                     self.load_map()
-                elif event.key == K_c:
-                    self.clear_map()
                 elif event.key == K_g:
                     self.show_grid = not self.show_grid
-                # Map navigation
-                elif event.key == K_w:
+                # Map navigation with arrow keys
+                elif event.key == K_UP:
                     self.camera_y = max(0, self.camera_y - self.tile_size)
-                elif event.key == K_s and not pygame.key.get_mods() & KMOD_CTRL:
+                elif event.key == K_DOWN:
                     self.camera_y = min(self.max_camera_y, self.camera_y + self.tile_size)
-                elif event.key == K_a:
+                elif event.key == K_LEFT:
                     self.camera_x = max(0, self.camera_x - self.tile_size)
-                elif event.key == K_d:
+                elif event.key == K_RIGHT:
                     self.camera_x = min(self.max_camera_x, self.camera_x + self.tile_size)
-                # Zoom controls
-                elif event.key == K_EQUALS or event.key == K_PLUS:
-                    self.adjust_zoom(1.25)  # Zoom in
-                elif event.key == K_MINUS:
-                    self.adjust_zoom(0.8)   # Zoom out
                 # Brush size controls
-                elif event.key == K_1:
-                    self.current_brush_size = 0  # 1x1 brush
-                    print(f"Brush size: 1x1")
-                elif event.key == K_2:
-                    self.current_brush_size = 1  # 2x2 brush
-                    print(f"Brush size: 2x2")
-                elif event.key == K_3:
-                    self.current_brush_size = 2  # 3x3 brush
-                    print(f"Brush size: 3x3")
+                elif event.key in (K_1, K_2, K_3):
+                    self.current_brush_size = int(event.unicode) - 1
+                    print(f"Brush size: {self.brush_sizes[self.current_brush_size]}x{self.brush_sizes[self.current_brush_size]}")
                 elif event.key == K_f:
-                    # Get mouse position and fill from there
                     mouse_pos = pygame.mouse.get_pos()
                     if mouse_pos[0] <= self.screen_width - self.SIDEBAR_WIDTH:
                         map_x = (mouse_pos[0] + self.camera_x) // self.tile_size
@@ -365,17 +450,15 @@ class TileMapEditor:
             
             elif event.type == MOUSEBUTTONDOWN:
                 if event.button == 1:  # Left click
-                    # Shift+Left click for fill
-                    if pygame.key.get_mods() & KMOD_SHIFT:
-                        if event.pos[0] <= self.screen_width - self.SIDEBAR_WIDTH:
+                    if event.pos[0] > self.screen_width - self.SIDEBAR_WIDTH:
+                        self.handle_sidebar_click(event.pos)
+                    else:
+                        # Check if shift is held for fill
+                        mods = pygame.key.get_mods()
+                        if mods & KMOD_SHIFT:
                             map_x = (event.pos[0] + self.camera_x) // self.tile_size
                             map_y = (event.pos[1] + self.camera_y) // self.tile_size
                             self.fill_area(map_x, map_y)
-                    # Regular left click
-                    else:
-                        # Check if click is in sidebar
-                        if event.pos[0] > self.screen_width - self.SIDEBAR_WIDTH:
-                            self.handle_sidebar_click(event.pos)
                         else:
                             self.drawing = True
                             self.place_tile(event.pos)
@@ -388,60 +471,83 @@ class TileMapEditor:
                     self.drag_start_x, self.drag_start_y = event.pos
                     self.drag_start_camera_x = self.camera_x
                     self.drag_start_camera_y = self.camera_y
-                # Mouse wheel zoom with Ctrl key
+                # Mouse wheel for sidebar scrolling and map zooming
                 elif event.button == 4:  # Scroll up
-                    if pygame.key.get_mods() & KMOD_CTRL:
-                        self.adjust_zoom(1.1)  # Zoom in
+                    mouse_x, mouse_y = event.pos
+                    if mouse_x > self.screen_width - self.SIDEBAR_WIDTH:
+                        # Calculate total rows and visible rows for sidebar
+                        textures_per_row = max(1, (self.SIDEBAR_WIDTH - 30) // (self.DEFAULT_TILE_SIZE + 8))
+                        total_rows = (len(self.textures) + textures_per_row - 1) // textures_per_row
+                        visible_rows = 280 // ((min(self.DEFAULT_TILE_SIZE, (self.SIDEBAR_WIDTH - 30) // textures_per_row - 8)) + 24)
+                        max_scroll = max(0, total_rows - visible_rows)
+                        # Scroll up in sidebar
+                        self.texture_scroll_offset = max(0, self.texture_scroll_offset - 1)
                     else:
-                        self.camera_y = max(0, self.camera_y - self.tile_size // 2)
+                        # Zoom in map
+                        self.adjust_zoom(1.1, mouse_x, mouse_y)
                 elif event.button == 5:  # Scroll down
-                    if pygame.key.get_mods() & KMOD_CTRL:
-                        self.adjust_zoom(0.9)  # Zoom out
+                    mouse_x, mouse_y = event.pos
+                    if mouse_x > self.screen_width - self.SIDEBAR_WIDTH:
+                        # Calculate total rows and visible rows for sidebar
+                        textures_per_row = max(1, (self.SIDEBAR_WIDTH - 30) // (self.DEFAULT_TILE_SIZE + 8))
+                        total_rows = (len(self.textures) + textures_per_row - 1) // textures_per_row
+                        visible_rows = 280 // ((min(self.DEFAULT_TILE_SIZE, (self.SIDEBAR_WIDTH - 30) // textures_per_row - 8)) + 24)
+                        max_scroll = max(0, total_rows - visible_rows)
+                        # Scroll down in sidebar
+                        self.texture_scroll_offset = min(max_scroll, self.texture_scroll_offset + 1)
                     else:
-                        self.camera_y = min(self.max_camera_y, self.camera_y + self.tile_size // 2)
+                        # Zoom out map
+                        self.adjust_zoom(0.9, mouse_x, mouse_y)
             
             elif event.type == MOUSEBUTTONUP:
-                if event.button == 1:  # Left click release
+                if event.button == 1:
                     self.drawing = False
-                elif event.button == 3:  # Right click release
+                elif event.button == 3:
                     self.erasing = False
-                elif event.button == 2:  # Middle click release
+                elif event.button == 2:
                     self.dragging = False
             
             elif event.type == MOUSEMOTION:
                 if self.drawing and event.pos[0] <= self.screen_width - self.SIDEBAR_WIDTH:
-                    self.place_tile(event.pos)
+                    # Don't draw while shift is held (to prevent drawing while trying to fill)
+                    if not (pygame.key.get_mods() & KMOD_SHIFT):
+                        self.place_tile(event.pos)
                 elif self.erasing and event.pos[0] <= self.screen_width - self.SIDEBAR_WIDTH:
                     self.erase_tile(event.pos)
                 elif self.dragging:
-                    dx = self.drag_start_x - event.pos[0]
-                    dy = self.drag_start_y - event.pos[1]
-                    self.camera_x = min(max(0, self.drag_start_camera_x + dx), self.max_camera_x)
-                    self.camera_y = min(max(0, self.drag_start_camera_y + dy), self.max_camera_y)
-    
-    def handle_sidebar_click(self, pos):
-        """Handle clicks in the sidebar to select textures"""
-        # Ignore clicks in the top part of sidebar (title area)
-        if pos[1] < 40:
-            return
+                    dx = event.pos[0] - self.drag_start_x
+                    dy = event.pos[1] - self.drag_start_y
+                    new_camera_x = self.drag_start_camera_x - dx
+                    new_camera_y = self.drag_start_camera_y - dy
+                    self.camera_x = min(max(0, new_camera_x), self.max_camera_x)
+                    self.camera_y = min(max(0, new_camera_y), self.max_camera_y)
+
+    def adjust_zoom(self, zoom_factor, mouse_x, mouse_y):
+        """Change the zoom level by a factor, keeping the point under mouse at the same place"""
+        old_zoom = self.zoom_level
         
-        sidebar_x = pos[0] - (self.screen_width - self.SIDEBAR_WIDTH)
-        sidebar_y = pos[1] - 40  # Adjust for the title area
+        # Calculate mouse position in map coordinates before zoom
+        map_x = (mouse_x + self.camera_x) / self.tile_size
+        map_y = (mouse_y + self.camera_y) / self.tile_size
         
-        # Calculate the tile size in the sidebar - update to match draw_sidebar
-        textures_per_row = max(1, (self.SIDEBAR_WIDTH - 20) // (self.DEFAULT_TILE_SIZE + 8))
-        sidebar_tile_size = min(self.DEFAULT_TILE_SIZE, (self.SIDEBAR_WIDTH - 20) // textures_per_row - 8)
+        # Apply new zoom level
+        self.zoom_level *= zoom_factor
+        self.zoom_level = max(self.MIN_ZOOM, min(self.MAX_ZOOM, self.zoom_level))
         
-        # Update spacing to match draw_sidebar
-        col = (sidebar_x - 10) // (sidebar_tile_size + 12)
-        row = sidebar_y // (sidebar_tile_size + 24)
+        # Update tile size based on zoom level
+        self.tile_size = int(self.DEFAULT_TILE_SIZE * self.zoom_level)
         
-        tile_index = row * textures_per_row + col
+        # Adjust camera to keep the point under mouse at the same place
+        self.camera_x = int(map_x * self.tile_size - mouse_x)
+        self.camera_y = int(map_y * self.tile_size - mouse_y)
         
-        if 0 <= tile_index < len(self.textures):
-            self.selected_tile_index = tile_index
-            print(f"Selected tile index: {self.selected_tile_index} (ID: {self.texture_ids[tile_index]})")
-    
+        # Clear zoomed texture cache if zoom changed
+        if old_zoom != self.zoom_level:
+            self.zoom_textures = {}
+        
+        # Update screen size constraints
+        self.update_screen_size()
+
     def place_tile(self, pos):
         """Place the currently selected tile at the mouse position with current brush size"""
         center_x = (pos[0] + self.camera_x) // self.tile_size
@@ -450,6 +556,7 @@ class TileMapEditor:
         brush_size = self.brush_sizes[self.current_brush_size]
         offset = brush_size // 2
         
+        # Place tiles
         for y_offset in range(brush_size):
             for x_offset in range(brush_size):
                 map_x = center_x - offset + x_offset
@@ -473,7 +580,7 @@ class TileMapEditor:
                 
                 if 0 <= map_x < self.map_width and 0 <= map_y < self.map_height:
                     self.tile_map[map_y][map_x] = -1  # -1 represents no tile
-    
+
     def toggle_map_size(self):
         """Toggle between available map sizes"""
         self.current_map_size_index = (self.current_map_size_index + 1) % len(self.MAP_SIZES)
@@ -528,12 +635,93 @@ class TileMapEditor:
                 stack.append((x - 1, y))
                 stack.append((x, y + 1))
                 stack.append((x, y - 1))
+
+    def draw_position_info(self):
+        """Draw current mouse position information in the top left corner"""
+        mouse_x, mouse_y = pygame.mouse.get_pos()
+        
+        # Only show position when mouse is in the map area
+        if mouse_x < self.screen_width - self.SIDEBAR_WIDTH:
+            map_x = (mouse_x + self.camera_x) // self.tile_size
+            map_y = (mouse_y + self.camera_y) // self.tile_size
+            
+            if 0 <= map_x < self.map_width and 0 <= map_y < self.map_height:
+                # Draw background
+                info_bg = pygame.Rect(10, 10, 140, 40)
+                pygame.draw.rect(self.screen, (30, 30, 30, 200), info_bg)
+                pygame.draw.rect(self.screen, (100, 100, 100), info_bg, 1)
+                
+                # Draw text
+                pos_text = self.font.render(f"X: {map_x}, Y: {map_y}", True, self.TEXT_COLOR)
+                tile_text = self.font.render(f"Tile: {self.tile_map[map_y][map_x] if self.tile_map[map_y][map_x] != -1 else 'None'}", True, self.TEXT_COLOR)
+                
+                self.screen.blit(pos_text, (15, 15))
+                self.screen.blit(tile_text, (15, 30))
+
+    def center_map(self):
+        """Center the map in the viewport"""
+        viewport_width = self.screen_width - self.SIDEBAR_WIDTH
+        viewport_height = self.screen_height
+        
+        # Calculate the position that would center the map
+        self.camera_x = max(0, min(
+            (self.map_width * self.tile_size - viewport_width) // 2,
+            self.max_camera_x
+        ))
+        self.camera_y = max(0, min(
+            (self.map_height * self.tile_size - viewport_height) // 2,
+            self.max_camera_y
+        ))
+        print("Map centered")
+
+    def save_state(self):
+        """Save current map state for undo/redo before a change is made"""
+        # Create a deep copy of the current map
+        state = [row[:] for row in self.tile_map]
+        
+        # Add to history, maintaining maximum size
+        self.history.append(state)
+        if len(self.history) > self.max_history:
+            self.history.pop(0)
+        
+        # Clear redo stack when a new action is performed
+        self.redo_stack = []
+
+    def undo(self):
+        """Undo the last map change"""
+        if len(self.history) > 1:  # Keep at least one state
+            # Move current state to redo stack
+            current_state = [row[:] for row in self.tile_map]
+            self.redo_stack.append(current_state)
+            
+            # Restore previous state
+            previous_state = self.history.pop()
+            self.tile_map = [row[:] for row in previous_state]
+            print("Undo performed")
+        else:
+            print("Nothing to undo")
+
+    def redo(self):
+        """Redo a previously undone change"""
+        if self.redo_stack:
+            # Get the state to redo
+            state_to_redo = self.redo_stack.pop()
+            
+            # Add current state to history
+            self.history.append([row[:] for row in self.tile_map])
+            
+            # Restore the redo state
+            self.tile_map = [row[:] for row in state_to_redo]
+            print("Redo performed")
+        else:
+            print("Nothing to redo")
     
     def save_map(self):
         """Save the current map to a file"""
         try:
             with open(f"map_{self.map_width}x{self.map_height}.txt", "w") as f:
-                # f.write(f"{self.map_width} {self.map_height}\n")
+                # Write map dimensions first
+                f.write(f"{self.map_width} {self.map_height}\n")
                 
                 # Write each row with the actual tile IDs from filenames
                 for y in range(self.map_height):
@@ -541,8 +729,8 @@ class TileMapEditor:
                     for x in range(self.map_width):
                         tile_index = self.tile_map[y][x]
                         if tile_index == -1:
-                            # No tile (use -1 or another value to represent empty)
-                            row_ids.append("1")
+                            # No tile (use -1 to represent empty)
+                            row_ids.append("-1")
                         else:
                             # Convert the internal index to the actual tile ID
                             tile_id = self.texture_ids[tile_index]
@@ -565,6 +753,7 @@ class TileMapEditor:
         
         try:
             with open(filename, "r") as f:
+                # Read map dimensions
                 width, height = map(int, f.readline().strip().split())
                 
                 # Check if the map size matches the current size
@@ -591,7 +780,10 @@ class TileMapEditor:
                 # Read the map data, converting tile IDs back to indices
                 new_map = []
                 for _ in range(height):
-                    file_row = list(map(int, f.readline().strip().split()))
+                    row = f.readline().strip()
+                    if not row:  # Skip empty lines
+                        continue
+                    file_row = list(map(int, row.split()))
                     map_row = []
                     
                     for tile_id in file_row:
@@ -610,14 +802,54 @@ class TileMapEditor:
                 
                 self.tile_map = new_map
                 print(f"Map loaded from {filename}")
+                
+                # Save initial state for undo/redo
+                if not self.history:
+                    self.save_state()
+                
         except Exception as e:
             print(f"Error loading map: {e}")
-    
+
     def clear_map(self):
         """Clear the current map"""
         self.tile_map = [[-1 for _ in range(self.map_width)] for _ in range(self.map_height)]
         print("Map cleared")
     
+    def toggle_grid(self):
+        """Toggle the grid visibility"""
+        self.show_grid = not self.show_grid
+        print(f"Grid {'shown' if self.show_grid else 'hidden'}")
+
+    def handle_sidebar_click(self, pos):
+        """Handle clicks in the sidebar area, particularly for texture selection"""
+        # Calculate texture grid parameters
+        textures_per_row = max(1, (self.SIDEBAR_WIDTH - 20) // (self.DEFAULT_TILE_SIZE + 8))
+        sidebar_tile_size = min(self.DEFAULT_TILE_SIZE, (self.SIDEBAR_WIDTH - 20) // textures_per_row - 8)
+        
+        # Define texture area boundaries
+        texture_area_top = 60
+        texture_area_height = 280
+        texture_area_bottom = texture_area_top + texture_area_height
+        
+        # Adjust position relative to sidebar
+        relative_x = pos[0] - (self.screen_width - self.SIDEBAR_WIDTH)
+        relative_y = pos[1]
+        
+        # Check if click is in texture area
+        if (10 <= relative_x <= self.SIDEBAR_WIDTH - 10 and 
+            texture_area_top <= relative_y <= texture_area_bottom):
+            
+            # Calculate which texture was clicked
+            col = (relative_x - 10) // (sidebar_tile_size + 12)
+            row = (relative_y - texture_area_top) // (sidebar_tile_size + 24) + self.texture_scroll_offset
+            
+            texture_index = row * textures_per_row + col
+            
+            # Update selected texture if valid
+            if 0 <= texture_index < len(self.textures):
+                self.selected_tile_index = texture_index
+                print(f"Selected texture {self.texture_ids[texture_index]}")
+
     def run(self):
         """Main game loop"""
         while self.is_running:
@@ -625,6 +857,20 @@ class TileMapEditor:
             
             self.draw_map()
             self.draw_sidebar()
+
+            while self.is_running:
+                self.handle_input()
+                
+                self.draw_map()
+                self.draw_sidebar()
+                self.draw_position_info()  # Add this line
+                
+                # Update saved message timer
+                if self.saved_message_timer > 0:
+                    self.saved_message_timer -= 1
+                
+                pygame.display.flip()
+                self.clock.tick(60)
             
             # Update saved message timer
             if self.saved_message_timer > 0:
