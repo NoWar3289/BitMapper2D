@@ -1,6 +1,6 @@
 # BitMapper2D
 
-BitMapper2D is a lightweight 2D tile map editor built with Pygame, designed for new game developers and level designers who need a simple but powerful tool for creating tile-based game maps. It allows you to quickly create, edit, and export maps as a txt file containing corresponding digits. Simply place tiles from your texture library onto the grid, save your map, and import it into your game.
+BitMapper2D is a lightweight 2D tile map editor built with Pygame, designed for new game developers and level designers who need a simple but powerful tool for creating tile-based game maps. It allows you to quickly create, edit, and export maps as a txt file containing corresponding index values. Simply place the tiles from your texture library onto the grid, save your map, and import it into your game.
 
 ## Keyboard Shortcuts
 
@@ -17,7 +17,7 @@ BitMapper2D is a lightweight 2D tile map editor built with Pygame, designed for 
 
 ## Adding Textures
 
-Place your texture images in the "textures" folder with filenames in the format "000.png", "001.png", etc. The editor will automatically load and index them on startup.
+Place your texture images in the `textures` folder with filenames in the format `000.png`, `001.png`, etc. The editor will automatically load and index them on startup.
 
 ## Installation
 
@@ -43,12 +43,8 @@ Place your texture images in the "textures" folder with filenames in the format 
 * BitMapper2D is currently in beta. Some features may not work properly.
 * Maps are saved in a simple text format in the same directory as `main.py`.
 * The editor automatically creates a `textures` folder with a default texture if it does'nt exists.
-* The editor supports PNG, JPG, and BMP image formats.
-* Maximum map size is currently limited to 100x100 tiles.
-
-## Feedback
-
-Feedback, bug reports, and pull requests are welcome. This is an open-source project designed to grow with the needs of its users.
+* The editor supports `PNG`, `JPG`, and `BMP` image formats.
+* Map size is currently limited to `50x50` and `100x100` tiles.
 
 ## License
 
