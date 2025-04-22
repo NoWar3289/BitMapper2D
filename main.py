@@ -728,7 +728,7 @@ class TileMapEditor:
         try:
             with open(f"map_{self.map_width}x{self.map_height}.txt", "w") as f:
                 # Write map dimensions first
-                f.write(f"{self.map_width} {self.map_height}\n")
+                # f.write(f"{self.map_width} {self.map_height}\n")
                 
                 # Write each row with the actual tile IDs from filenames
                 for y in range(self.map_height):

@@ -2,8 +2,8 @@ textures/*
 .DS_Store
 */.DS_Store
 .vscode/*
-map_50X50.txt
-map_100x100.txt
 testing.py
 __pycache__
 tempCodeRunnerFile.py
+map_50x50.txt
+map_100x100.txt
