@@ -48,7 +48,7 @@ Place your texture images in the `textures` folder with filenames in the format 
 * The editor automatically creates a `textures` folder with a default texture if it doesn't exist.
 * The editor supports `PNG`, `JPG`, `JPEG`, and `BMP` image formats.
 * Map size is limited to `25x25`, `50x50` and `100x100` tiles. You can simply edit the code for different sizes.
-* 
+
 ## License
 
 MIT License - See LICENSE file for details.
