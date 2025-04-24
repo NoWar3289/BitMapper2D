@@ -45,7 +45,7 @@ Place your texture images in the `textures` folder with filenames in the format 
 * The editor supports `PNG`, `JPG`, `JPEG`, and `BMP` image formats.
 * Map size is limited to `25x25`, `50x50` and `100x100` tiles. You can simply edit the code for different sizes.
 
-## Reason for Building BitMapper2D
+## Why I Created BitMapper2D?
 
 I got bored after graduating high school. I'm also interested in game development and building an RPG game (RBGForge). Needed a tile map editor for it, so I created my own.
 
