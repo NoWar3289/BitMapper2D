@@ -1,6 +1,6 @@
 # BitMapper2D
 
-BitMapper2D is a lightweight 2D tile map editor built with Pygame, designed for new game developers and level designers who need a simple but powerful tool for creating tile-based game maps. It allows you to quickly create, edit, and export maps as a txt file containing the respective index values of the map array. Simply place the tiles from your texture library onto the grid, save your map, and import it into your game.
+BitMapper2D is a lightweight 2D tile map editor built with Pygame, designed for new game developers and level designers who need a simple but powerful tool for creating tile-based game maps. It allows you to quickly create, edit, and export maps as a txt file containing the respective index values of the tiles for the map array. Simply place the tiles from your texture library onto the grid, save your map, and import it into your game.
 
 ## Why I Created BitMapper2D?
 
