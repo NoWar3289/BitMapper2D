@@ -1,6 +1,6 @@
 # BitMapper2D
 
-BitMapper2D is a lightweight 2D tile map editor built with Pygame, designed for new game developers and level designers who need a simple but powerful tool for creating tile-based game maps. It allows you to quickly create, edit, and export maps as a txt file containing corresponding index values. Simply place the tiles from your texture library onto the grid, save your map, and import it into your game.
+BitMapper2D is a lightweight 2D tile map editor built with Pygame, designed for new game developers and level designers who need a simple but powerful tool for creating tile-based game maps. It allows you to quickly create, edit, and export maps as a txt file containing respective index values of the map array. Simply place the tiles from your texture library onto the grid, save your map, and import it into your game.
 
 ## Keyboard Shortcuts
 
@@ -8,12 +8,11 @@ BitMapper2D is a lightweight 2D tile map editor built with Pygame, designed for 
 * **RMB**: Erase tile
 * **MMB**: Drag map
 * **Shift+LMB/F**: Fill area
-* **1/2/3**: Set brush size
+* **1/2/3/4**: Set brush size
 * **Arrow Keys**: Navigate map
 * **Scroll**: Zoom in/out
 * **G**: Toggle grid
 * **Tab**: Change map size
-* **Esc**: Quit
 
 ## Adding Textures
 
@@ -40,11 +39,11 @@ Place your texture images in the `textures` folder with filenames in the format 
 
 ## Notes
 
-* BitMapper2D is currently in beta. Some features may not work properly.
+* BitMapper2D is a small project. Some features may not work properly.
 * Maps are saved in a simple text format in the same directory as `main.py`.
 * The editor automatically creates a `textures` folder with a default texture if it does'nt exists.
-* The editor supports `PNG`, `JPG`, and `BMP` image formats.
-* Map size is currently limited to `50x50` and `100x100` tiles.
+* The editor supports `PNG`, `JPG`, `JPEG`, and `BMP` image formats.
+* Map size is limited to `25x25`, `50x50` and `100x100` tiles. You can simply edit the code for different sizes.
 
 ## License
 
