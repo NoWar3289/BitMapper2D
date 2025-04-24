@@ -47,7 +47,7 @@ Place your texture images in the `textures` folder with filenames in the format 
 
 ## Why I Created BitMapper2D?
 
-I got bored after graduating high school. I'm also interested in game development and building an RPG game (RBGForge). Needed a tile map editor for it, so I created my own.
+I got really bored after graduating from high school. Started building an RPG game template (RBGForge) and needed a tile map editor for it, so I created my own. Thought it would be helpful for new learners just like me, so I created a repo.
 
 ## License
 
