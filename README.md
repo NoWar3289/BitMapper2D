@@ -28,7 +28,7 @@ Place your texture images in the `textures` folder with filenames in the format 
 
 2. **Clone the repository:**
 ```bash
-    git clone https://github.com/NoWar3289/BitMapper2D.git
+    git clone https://github.com/manisharavindh/BitMapper2D.git
    ```
 
 3. **Install dependencies:**
